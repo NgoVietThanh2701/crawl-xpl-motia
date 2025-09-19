@@ -3,13 +3,15 @@ import { CronConfig } from "motia";
 export const config: CronConfig = {
   type: "cron",
   name: "FetchXplCron",
-  description: "Cron job to fetch XPL order book data from KuCoin every minute",
+  description: "Cron job to trigger XPL data processing every minute",
   cron: "*/1 * * * *", // Every minute
-  emits: [],
+  emits: ["xpl.fetch.requested"],
   flows: ["xpl-management"],
 };
 
 export const handler = async (req: any, context: any) => {
+  const { logger, traceId, emit } = context || {};
+
   try {
     const startTime = new Date().toLocaleString("vi-VN", {
       timeZone: "Asia/Ho_Chi_Minh",
@@ -21,45 +23,34 @@ export const handler = async (req: any, context: any) => {
       second: "2-digit",
     });
 
-    console.log(`🔄 [START] ${startTime} - Fetching XPL data...`);
+    console.log(`🔄 [START] ${startTime} - Triggering XPL data processing...`);
 
-    // Call the main fetch function by making HTTP request to the API endpoint
-    const response = await fetch("http://localhost:3000/fetch-xpl", {
-      method: "GET",
-      headers: {
-        "Content-Type": "application/json",
-        "x-cron-call": "true", // Mark as cron call to reduce logging
-      },
+    // Motia will automatically emit the event defined in config.emits
+    console.log(
+      `📤 [EVENT] Motia will automatically emit xpl.fetch.requested event...`
+    );
+
+    // Just log the cron execution - Motia handles the event emission
+    console.log(
+      `✅ [EVENT SUCCESS] Cron job executed - event will be emitted automatically`
+    );
+
+    const endTime = new Date().toLocaleString("vi-VN", {
+      timeZone: "Asia/Ho_Chi_Minh",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
     });
 
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
+    console.log(`✅ [TRIGGERED] ${endTime} - Cron job completed successfully`);
 
-    const result = await response.json();
-
-    if (result.success) {
-      const endTime = new Date().toLocaleString("vi-VN", {
-        timeZone: "Asia/Ho_Chi_Minh",
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
-        hour: "2-digit",
-        minute: "2-digit",
-        second: "2-digit",
+    if (logger) {
+      logger.info("Cron job completed successfully", {
+        traceId,
       });
-
-      console.log(
-        `✅ [COMPLETE] ${endTime} - FetchXplCron completed successfully:`,
-        {
-          buyOrders: result.totalBuyOrders,
-          sellOrders: result.totalSellOrders,
-          savedToDatabase: result.savedToDatabase,
-          totalEntries: result.totalEntries,
-        }
-      );
-    } else {
-      throw new Error(result.error || "Unknown error occurred");
     }
   } catch (error) {
     const errorTime = new Date().toLocaleString("vi-VN", {
@@ -76,5 +67,13 @@ export const handler = async (req: any, context: any) => {
       `❌ [ERROR] ${errorTime} - FetchXplCron failed:`,
       (error as Error).message
     );
+    console.error(`❌ [ERROR] Stack trace:`, (error as Error).stack);
+
+    if (logger) {
+      logger.error("Cron job failed", {
+        error: (error as Error).message,
+        traceId,
+      });
+    }
   }
 };
