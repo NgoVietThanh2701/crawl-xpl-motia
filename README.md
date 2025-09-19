@@ -18,12 +18,15 @@ This project provides a comprehensive solution for:
 ```
 crawl-xpl-motia/
 ├── steps/                          # Core Motia workflow steps
-│   ├── fetch-xpl.step.ts          # API endpoint for manual data fetching
-│   ├── fetch-xpl-cron.step.ts     # Cron job for automated data collection
-│   ├── get-orders.step.ts         # API endpoint for retrieving order data
-│   └── init-database.step.ts      # Database initialization
-├── utils/                          # Utility functions
-│   └── database.ts                # Database operations and queries
+│   ├── xpl/                        # XPL Orders Domain
+│   │   ├── fetch-xpl.step.ts       # API: Manual data fetching
+│   │   ├── fetch-xpl-cron.step.ts  # Cron: Automated data collection
+│   │   ├── get-xpl-orders.step.ts  # API: Retrieve order data
+│   │   └── process-xpl-data.step.ts # Event: Core data processing logic
+│   ├── database/                   # Database Domain
+│   │   └── init-database.step.ts   # API: Database initialization
+│   └── utils/                      # Shared utilities
+│       └── database.ts             # Database operations and queries
 ├── types.d.ts                     # TypeScript type definitions
 ├── motia-workbench.json          # Motia workbench configuration
 ├── package.json                   # Node.js dependencies
@@ -105,6 +108,18 @@ The server will start on `http://localhost:3000`
 | `GET`  | `/order-books`   | Retrieve all order data from database |
 | `POST` | `/init-database` | Initialize database tables            |
 
+### API Response Format
+
+All endpoints return JSON responses with the following structure:
+
+```json
+{
+  "success": true,
+  "message": "Operation completed successfully",
+  "data": { /* response data */ }
+}
+```
+
 ## ⏰ Cron Job System
 
 ### Automated Data Collection
@@ -114,20 +129,25 @@ The application includes a cron job that automatically fetches XPL data every mi
 - **Schedule**: `*/1 * * * *` (every minute)
 - **Job Name**: `FetchXplCron`
 - **Flow**: `xpl-management`
+- **Location**: `steps/xpl/fetch-xpl-cron.step.ts`
 
-### Monitoring Cron Jobs
+### Event-Driven Architecture
+
+The cron job uses an event-driven approach:
+
+1. **Cron Job** (`fetch-xpl-cron.step.ts`) emits `xpl.fetch.requested` event
+2. **Event Handler** (`process-xpl-data.step.ts`) processes the event
+3. **Data Processing** fetches from KuCoin and saves to database
 
 ### Cron Job Configuration
-
-The cron job is configured in `steps/fetch-xpl-cron.step.ts`:
 
 ```typescript
 export const config: CronConfig = {
   type: "cron",
   name: "FetchXplCron",
-  description: "Cron job to fetch XPL order book data from KuCoin every minute",
+  description: "Cron job to automatically fetch XPL data every minute",
   cron: "*/1 * * * *", // Every minute
-  emits: [],
+  emits: ["xpl.fetch.requested"],
   flows: ["xpl-management"],
 };
 ````
@@ -163,17 +183,66 @@ CREATE TABLE order_books (
 
 1. **`api-endpoints`**: Contains API endpoints for manual operations
 2. **`xpl-management`**: Contains cron jobs and order management
-3. **`database-management`**: Contains database initialization
+3. **`xpl-processing`**: Contains event-driven data processing
+4. **`database-management`**: Contains database initialization
 
 ### Step Types
 
 - **API Steps**: HTTP endpoints for external access
 - **Cron Steps**: Scheduled tasks for automation
-- **Event Steps**: Event-driven processing (future use)
+- **Event Steps**: Event-driven processing for core business logic
+
+### Event-Driven Processing Flow
+
+```
+┌─────────────────┐    ┌──────────────────┐    ┌─────────────────────┐
+│   Cron Job      │    │   API Endpoint   │    │   Event Handler     │
+│                 │    │                  │    │                     │
+│ fetch-xpl-cron  │    │   fetch-xpl      │    │ process-xpl-data    │
+│                 │    │                  │    │                     │
+│ Emits:          │    │ Emits:           │    │ Subscribes:         │
+│ xpl.fetch.      │    │ xpl.fetch.       │    │ xpl.fetch.          │
+│ requested       │    │ requested        │    │ requested           │
+└─────────────────┘    └──────────────────┘    └─────────────────────┘
+         │                       │                       │
+         └───────────────────────┼───────────────────────┘
+                                 │
+                                 ▼
+                    ┌─────────────────────┐
+                    │   Data Processing   │
+                    │                     │
+                    │ • Fetch from KuCoin │
+                    │ • Compare orders    │
+                    │ • Update database   │
+                    │ • Track status      │
+                    └─────────────────────┘
+```
 
 ## 🚀 Production Deployment
 
-# Copy source code
+### Environment Setup
+
+1. **Database**: Ensure PostgreSQL is running and accessible
+2. **Environment Variables**: Configure all required environment variables
+3. **Dependencies**: Install all required packages
+4. **Build**: Compile TypeScript to JavaScript (if needed)
+
+### Deployment Steps
+
+```bash
+# Install dependencies
+npm install
+
+# Set environment variables
+export DB_HOST=your_db_host
+export DB_PORT=5432
+export DB_NAME=xpl_orders
+export DB_USER=your_username
+export DB_PASSWORD=your_password
+
+# Start the application
+npm run dev
+```
 
 ## 📊 Monitoring & Logging
 
@@ -188,5 +257,39 @@ CREATE TABLE order_books (
 - **Health Check**: `GET /health` (if implemented)
 - **Metrics**: Available through Motia workbench
 - **Cron Status**: Visible in terminal logs
+
+### Development
+
+### Running the Application
+
+```bash
+# Start development server
+npm run dev
+
+# Start with workbench UI
+npm run dev:workbench
+
+# Build project
+npm run build
+
+# Run tests
+npm test
+```
+
+### File Organization
+
+The project follows a domain-driven structure:
+
+- **`steps/xpl/`**: All XPL-related functionality
+- **`steps/database/`**: Database management
+- **`utils/`**: Shared utilities and helpers
+
+### Key Features
+
+- **Event-Driven Architecture**: Clean separation of concerns
+- **TypeScript**: Full type safety and modern JavaScript features
+- **PostgreSQL**: Reliable data persistence
+- **Cron Jobs**: Automated data collection
+- **RESTful APIs**: Easy integration with external systems
 
 **Built with ❤️ using Motia Framework**
