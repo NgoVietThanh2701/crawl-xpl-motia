@@ -6,7 +6,7 @@ import {
   updateOrderStatus,
   getAllOrderBooks,
   OrderBook,
-} from "../utils/database";
+} from "../../utils/database";
 
 export const config: EventConfig = {
   type: "event",

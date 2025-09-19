@@ -3,14 +3,14 @@ import { CronConfig } from "motia";
 export const config: CronConfig = {
   type: "cron",
   name: "FetchXplCron",
-  description: "Cron job to trigger XPL data processing every minute",
+  description: "Cron job to automatically fetch XPL data every minute",
   cron: "*/1 * * * *", // Every minute
   emits: ["xpl.fetch.requested"],
   flows: ["xpl-management"],
 };
 
 export const handler = async (req: any, context: any) => {
-  const { logger, traceId, emit } = context || {};
+  const { logger, traceId } = context || {};
 
   try {
     const startTime = new Date().toLocaleString("vi-VN", {

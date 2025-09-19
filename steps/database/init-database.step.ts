@@ -1,6 +1,6 @@
 import { ApiRouteConfig, Handlers } from "motia";
 import { z } from "zod";
-import { createOrderBooksTable } from "../utils/database";
+import { createOrderBooksTable } from "../../utils/database";
 
 export const config: ApiRouteConfig = {
   type: "api",

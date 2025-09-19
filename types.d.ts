@@ -13,9 +13,9 @@ declare module 'motia' {
 
   interface Handlers {
     'ProcessXplData': EventHandler<{ source?: string; traceId?: string }, never>
-    'InitDatabase': ApiRouteHandler<Record<string, unknown>, ApiResponse<200, { success: boolean; message: string }> | ApiResponse<500, { success: boolean; error: string }>, never>
     'GetOrders': ApiRouteHandler<Record<string, unknown>, ApiResponse<200, { success: boolean; data: { id: number; uid: string; side: string; username: string; price: number; quantity: number; funds: number; status: string; created_at: string; updated_at: string }[]; total: number; message: string }> | ApiResponse<500, { success: boolean; error: string }>, never>
     'XplDataApi': ApiRouteHandler<Record<string, unknown>, ApiResponse<200, { success: boolean; message: string; totalBuyOrders: number; totalSellOrders: number; totalEntries: number; savedToDatabase: number }> | ApiResponse<500, { success: boolean; error: string }>, { topic: 'xpl.fetch.requested'; data: { source?: string; traceId?: string } }>
     'FetchXplCron': CronHandler<{ topic: 'xpl.fetch.requested'; data: { source?: string; traceId?: string } }>
+    'InitDatabase': ApiRouteHandler<Record<string, unknown>, ApiResponse<200, { success: boolean; message: string }> | ApiResponse<500, { success: boolean; error: string }>, never>
   }
 }
