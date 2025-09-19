@@ -1,10 +1,10 @@
 {
-  "timestamp": "09/19/2025, 09:11:27",
+  "timestamp": "09/19/2025, 11:31:52",
   "summary": {
     "totalBuyPages": 3,
     "totalSellPages": 6,
-    "totalBuyOrders": 26,
-    "totalSellOrders": 59
+    "totalBuyOrders": 25,
+    "totalSellOrders": 58
   },
   "buyOrders": [
     {
@@ -331,22 +331,22 @@
       "pledgeAmount": "10.25",
       "ownOrder": false,
       "status": "open"
-    },
-    {
-      "id": "43242424324242",
-      "userShortName": "H8",
-      "offerCurrency": "USDT",
-      "deliveryCurrency": "XPL",
-      "side": "BUY",
-      "price": "0.63",
-      "size": "500",
-      "funds": "315",
-      "pledgeAmount": "322.875",
-      "ownOrder": false,
-      "status": "close"
     }
   ],
   "sellOrders": [
+    {
+      "id": "68ccd93ba57b2a00079c24a4",
+      "userShortName": "KO",
+      "offerCurrency": "USDT",
+      "deliveryCurrency": "XPL",
+      "side": "SELL",
+      "price": "0.71",
+      "size": "500",
+      "funds": "355",
+      "pledgeAmount": "355",
+      "ownOrder": false,
+      "status": "open"
+    },
     {
       "id": "68cc75cca57b2a00079c223c",
       "userShortName": "SP",
@@ -362,19 +362,6 @@
     },
     {
       "id": "68caca38cef2fa0007764229",
-      "userShortName": "KO",
-      "offerCurrency": "USDT",
-      "deliveryCurrency": "XPL",
-      "side": "SELL",
-      "price": "0.72",
-      "size": "500",
-      "funds": "360",
-      "pledgeAmount": "360",
-      "ownOrder": false,
-      "status": "open"
-    },
-    {
-      "id": "68caca5a72fdf4000777466b",
       "userShortName": "KO",
       "offerCurrency": "USDT",
       "deliveryCurrency": "XPL",
@@ -1100,19 +1087,6 @@
       "pledgeAmount": "35",
       "ownOrder": false,
       "status": "open"
-    },
-    {
-      "id": "68c60b06cef2fa00076fbc7a",
-      "userShortName": "AA",
-      "offerCurrency": "USDT",
-      "deliveryCurrency": "XPL",
-      "side": "SELL",
-      "price": "1",
-      "size": "10",
-      "funds": "10",
-      "pledgeAmount": "10",
-      "ownOrder": false,
-      "status": "close"
     }
   ]
 }

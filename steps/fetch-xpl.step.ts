@@ -2,6 +2,13 @@ import { ApiRouteConfig, Handlers } from "motia";
 import { z } from "zod";
 import { writeFileSync, readFileSync, existsSync } from "fs";
 import { join } from "path";
+import {
+  createOrderBooksTable,
+  insertOrderBook,
+  updateOrderStatus,
+  getAllOrderBooks,
+  OrderBook,
+} from "../utils/database";
 
 export const config: ApiRouteConfig = {
   type: "api",
@@ -16,13 +23,14 @@ export const config: ApiRouteConfig = {
       totalBuyOrders: z.number(),
       totalSellOrders: z.number(),
       totalEntries: z.number(),
+      savedToDatabase: z.number(),
     }),
     500: z.object({
       success: z.boolean(),
       error: z.string(),
     }),
   },
-  emits: ["xpl.data.fetched"],
+  emits: [],
   flows: ["xpl-management"],
 };
 
@@ -32,6 +40,9 @@ export const handler: Handlers["FetchXpl"] = async (
 ) => {
   try {
     logger.info("Fetching XPL order book data from KuCoin", { traceId });
+
+    // Ensure database table exists
+    await createOrderBooksTable();
 
     const URL =
       "https://www.kucoin.com/_api/grey-market-trade/grey/market/orderBook";
@@ -109,64 +120,60 @@ export const handler: Handlers["FetchXpl"] = async (
       }
     }
 
-    // Read existing file to compare orders
-    const filePath = join(process.cwd(), "xpl-token.txt");
-    let existingData = null;
+    // Get existing orders from database
+    const existingOrders = await getAllOrderBooks();
+    logger.info(`Found ${existingOrders.length} existing orders in database`, {
+      traceId,
+    });
 
-    if (existsSync(filePath)) {
-      try {
-        const fileContent = readFileSync(filePath, "utf8");
-        existingData = JSON.parse(fileContent);
-      } catch (error) {
-        logger.warn("Failed to read existing file", {
-          error: (error as Error).message,
+    // Create sets of new order IDs for comparison
+    const newOrderIds = new Set([
+      ...allOrders.buyOrders.map((order) => order.id),
+      ...allOrders.sellOrders.map((order) => order.id),
+    ]);
+
+    // Update status of existing orders that are no longer in new data
+    for (const existingOrder of existingOrders) {
+      if (!newOrderIds.has(existingOrder.uid)) {
+        await updateOrderStatus(existingOrder.uid, "close");
+        logger.info(`Marked order as closed: ${existingOrder.uid}`, {
           traceId,
         });
       }
     }
 
-    // Update status of existing orders that are no longer in new data
-    if (existingData) {
-      const newOrderIds = new Set([
-        ...allOrders.buyOrders.map((order) => order.id),
-        ...allOrders.sellOrders.map((order) => order.id),
-      ]);
+    // Insert/update all new orders in database
+    const allOrdersToSave = [...allOrders.buyOrders, ...allOrders.sellOrders];
+    let savedCount = 0;
 
-      // Mark old buy orders as closed if not in new data
-      if (existingData.buyOrders) {
-        existingData.buyOrders.forEach((order: any) => {
-          if (!newOrderIds.has(order.id)) {
-            order.status = "close";
-          }
+    for (const order of allOrdersToSave) {
+      try {
+        await insertOrderBook({
+          uid: order.id,
+          side: order.side,
+          username: order.userShortName || order.username || "Unknown",
+          price: parseFloat(order.price) || 0,
+          quantity: parseFloat(order.size) || 0,
+          funds: parseFloat(order.funds) || 0,
+          status: "open",
         });
-      }
-
-      // Mark old sell orders as closed if not in new data
-      if (existingData.sellOrders) {
-        existingData.sellOrders.forEach((order: any) => {
-          if (!newOrderIds.has(order.id)) {
-            order.status = "close";
-          }
+        savedCount++;
+      } catch (error) {
+        logger.error(`Failed to save order ${order.id}`, {
+          error: (error as Error).message,
+          orderId: order.id,
+          traceId,
         });
-      }
-
-      // Add closed orders to current data
-      if (existingData.buyOrders) {
-        const closedBuyOrders = existingData.buyOrders.filter(
-          (order: any) => order.status === "close"
-        );
-        allOrders.buyOrders.push(...closedBuyOrders);
-      }
-
-      if (existingData.sellOrders) {
-        const closedSellOrders = existingData.sellOrders.filter(
-          (order: any) => order.status === "close"
-        );
-        allOrders.sellOrders.push(...closedSellOrders);
       }
     }
 
-    // Write data to file
+    logger.info(`Saved ${savedCount} orders to database`, {
+      savedCount,
+      traceId,
+    });
+
+    // Write data to file (keeping original file functionality)
+    const filePath = join(process.cwd(), "xpl-token.txt");
     const now = new Date();
     const formattedTime = now.toLocaleString("en-US", {
       year: "numeric",
@@ -192,10 +199,11 @@ export const handler: Handlers["FetchXpl"] = async (
 
     writeFileSync(filePath, JSON.stringify(fileData, null, 2), "utf8");
 
-    logger.info("XPL data written to file successfully", {
+    logger.info("XPL data written to file and database successfully", {
       filePath,
       buyOrders: allOrders.buyOrders.length,
       sellOrders: allOrders.sellOrders.length,
+      savedToDatabase: savedCount,
       traceId,
     });
 
@@ -203,10 +211,12 @@ export const handler: Handlers["FetchXpl"] = async (
       status: 200,
       body: {
         success: true,
-        message: "XPL data fetched and saved to xpl-token.txt successfully",
+        message:
+          "XPL data fetched and saved to database and xpl-token.txt successfully",
         totalBuyOrders: allOrders.buyOrders.length,
         totalSellOrders: allOrders.sellOrders.length,
         totalEntries: allOrders.buyOrders.length + allOrders.sellOrders.length,
+        savedToDatabase: savedCount,
       },
     };
   } catch (error) {
