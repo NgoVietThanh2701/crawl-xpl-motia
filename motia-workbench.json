@@ -19,5 +19,22 @@
         "y": 12
       }
     }
+  },
+  {
+    "id": "xpl-management",
+    "config": {
+      "steps\\get-orders.step.ts": {
+        "x": 0,
+        "y": 0
+      },
+      "steps\\fetch-xpl.step.ts": {
+        "x": 0,
+        "y": 223
+      },
+      "steps\\fetch-xpl-cron.step.ts": {
+        "x": 0,
+        "y": 446
+      }
+    }
   }
 ]

@@ -1,7 +1,5 @@
 import { ApiRouteConfig, Handlers } from "motia";
 import { z } from "zod";
-import { writeFileSync, readFileSync, existsSync } from "fs";
-import { join } from "path";
 import {
   createOrderBooksTable,
   insertOrderBook,
@@ -12,7 +10,7 @@ import {
 
 export const config: ApiRouteConfig = {
   type: "api",
-  name: "FetchXpl",
+  name: "XplDataApi",
   description: "API endpoint to fetch XPL order book data from KuCoin",
   method: "GET",
   path: "/fetch-xpl",
@@ -31,15 +29,21 @@ export const config: ApiRouteConfig = {
     }),
   },
   emits: [],
-  flows: ["xpl-management"],
+  flows: ["api-endpoints"],
 };
 
-export const handler: Handlers["FetchXpl"] = async (
-  req,
-  { logger, traceId, emit }
+export const handler = async (
+  req: any,
+  { logger, traceId, emit }: { logger: any; traceId: string; emit: any }
 ) => {
   try {
-    logger.info("Fetching XPL order book data from KuCoin", { traceId });
+    // Temporarily disable all detailed logging in API endpoint
+    // Only keep essential error logging
+    const isCronCall = true; // Force disable all detailed logs
+
+    if (!isCronCall) {
+      logger.info("Fetching XPL order book data from KuCoin", { traceId });
+    }
 
     // Ensure database table exists
     await createOrderBooksTable();
@@ -66,7 +70,9 @@ export const handler: Handlers["FetchXpl"] = async (
     let totalSellPages = 0;
 
     for (const side of sides) {
-      logger.info(`Fetching ${side.toUpperCase()} orders`, { side, traceId });
+      if (!isCronCall) {
+        logger.info(`Fetching ${side.toUpperCase()} orders`, { side, traceId });
+      }
 
       const payload = {
         currentPage: 1,
@@ -89,11 +95,13 @@ export const handler: Handlers["FetchXpl"] = async (
         totalSellPages = totalPages;
       }
 
-      logger.info(`Total pages for ${side}: ${totalPages}`, {
-        side,
-        totalPages,
-        traceId,
-      });
+      if (!isCronCall) {
+        logger.info(`Total pages for ${side}: ${totalPages}`, {
+          side,
+          totalPages,
+          traceId,
+        });
+      }
 
       // Fetch all pages
       for (let currentPage = 1; currentPage <= totalPages; currentPage++) {
@@ -122,9 +130,14 @@ export const handler: Handlers["FetchXpl"] = async (
 
     // Get existing orders from database
     const existingOrders = await getAllOrderBooks();
-    logger.info(`Found ${existingOrders.length} existing orders in database`, {
-      traceId,
-    });
+    if (!isCronCall) {
+      logger.info(
+        `Found ${existingOrders.length} existing orders in database`,
+        {
+          traceId,
+        }
+      );
+    }
 
     // Create sets of new order IDs for comparison
     const newOrderIds = new Set([
@@ -136,9 +149,11 @@ export const handler: Handlers["FetchXpl"] = async (
     for (const existingOrder of existingOrders) {
       if (!newOrderIds.has(existingOrder.uid)) {
         await updateOrderStatus(existingOrder.uid, "close");
-        logger.info(`Marked order as closed: ${existingOrder.uid}`, {
-          traceId,
-        });
+        if (!isCronCall) {
+          logger.info(`Marked order as closed: ${existingOrder.uid}`, {
+            traceId,
+          });
+        }
       }
     }
 
@@ -167,52 +182,27 @@ export const handler: Handlers["FetchXpl"] = async (
       }
     }
 
-    logger.info(`Saved ${savedCount} orders to database`, {
-      savedCount,
-      traceId,
-    });
+    if (!isCronCall) {
+      logger.info(`Saved ${savedCount} orders to database`, {
+        savedCount,
+        traceId,
+      });
+    }
 
-    // Write data to file (keeping original file functionality)
-    const filePath = join(process.cwd(), "xpl-token.txt");
-    const now = new Date();
-    const formattedTime = now.toLocaleString("en-US", {
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      hour12: false,
-    });
-
-    const fileData = {
-      timestamp: formattedTime,
-      summary: {
-        totalBuyPages,
-        totalSellPages,
-        totalBuyOrders: allOrders.buyOrders.length,
-        totalSellOrders: allOrders.sellOrders.length,
-      },
-      buyOrders: allOrders.buyOrders,
-      sellOrders: allOrders.sellOrders,
-    };
-
-    writeFileSync(filePath, JSON.stringify(fileData, null, 2), "utf8");
-
-    logger.info("XPL data written to file and database successfully", {
-      filePath,
-      buyOrders: allOrders.buyOrders.length,
-      sellOrders: allOrders.sellOrders.length,
-      savedToDatabase: savedCount,
-      traceId,
-    });
+    if (!isCronCall) {
+      logger.info("XPL data saved to database successfully", {
+        buyOrders: allOrders.buyOrders.length,
+        sellOrders: allOrders.sellOrders.length,
+        savedToDatabase: savedCount,
+        traceId,
+      });
+    }
 
     return {
       status: 200,
       body: {
         success: true,
-        message:
-          "XPL data fetched and saved to database and xpl-token.txt successfully",
+        message: "XPL data fetched and saved to database successfully",
         totalBuyOrders: allOrders.buyOrders.length,
         totalSellOrders: allOrders.sellOrders.length,
         totalEntries: allOrders.buyOrders.length + allOrders.sellOrders.length,

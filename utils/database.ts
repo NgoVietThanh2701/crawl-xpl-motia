@@ -123,7 +123,7 @@ export async function getAllOrderBooks(): Promise<OrderBook[]> {
   const selectQuery = `
     SELECT id, uid, side, username, price, quantity, funds, status, created_at, updated_at
     FROM order_books
-    ORDER BY created_at DESC
+    ORDER BY created_at ASC
   `;
 
   const result = await query(selectQuery);
@@ -137,7 +137,7 @@ export async function getOrderBooksByStatus(
     SELECT id, uid, side, username, price, quantity, funds, status, created_at, updated_at
     FROM order_books
     WHERE status = $1
-    ORDER BY created_at DESC
+    ORDER BY created_at ASC
   `;
 
   const result = await query(selectQuery, [status]);
