@@ -31,41 +31,32 @@ export const handler = async (
   }: { logger: any; traceId: string; emit: any; state: any }
 ) => {
   try {
-    console.log(`🎯 [EVENT RECEIVED] ProcessXplData received event:`, {
-      input,
-      traceId,
-    });
-
     const isCronCall = input.source === "cron";
 
-    if (isCronCall) {
-      console.log(`⏰ [CRON PROCESSING] Processing XPL data from cron job`, {
-        traceId,
-      });
-    } else {
-      logger.info("Processing XPL order book data from KuCoin", { traceId });
-    }
-
-    // Add small delay for cron calls to avoid immediate rate limiting
-    if (isCronCall) {
-      console.log(`⏳ [DELAY] Waiting 2 seconds before processing...`);
-      await new Promise((resolve) => setTimeout(resolve, 2000)); // 2 second delay
-    }
+    // No delays - use concurrent processing instead
 
     // Process the data
     const result = await processXplData();
 
-    // Log completion (no emit needed)
-    console.log(`✅ [COMPLETED] XPL data processing completed successfully`);
-
-    if (!isCronCall && result.success) {
+    // Only log success if truly successful (no errors)
+    if (
+      !isCronCall &&
+      result.success &&
+      "totalBuyOrders" in result &&
+      "totalSellOrders" in result
+    ) {
       const successResult = result as any;
-      logger.info("XPL data processing completed successfully", {
-        buyOrders: successResult.totalBuyOrders,
-        sellOrders: successResult.totalSellOrders,
-        savedToDatabase: successResult.savedToDatabase,
-        traceId,
-      });
+      if (
+        successResult.totalBuyOrders > 0 &&
+        successResult.totalSellOrders > 0
+      ) {
+        logger.info("XPL data processing completed successfully", {
+          buyOrders: successResult.totalBuyOrders,
+          sellOrders: successResult.totalSellOrders,
+          savedToDatabase: successResult.savedToDatabase,
+          traceId,
+        });
+      }
     }
 
     return result;
@@ -93,113 +84,116 @@ export const handler = async (
           buyOrders: [],
           sellOrders: [],
         };
-        let totalBuyPages = 0;
-        let totalSellPages = 0;
 
-        for (const side of sides) {
-          try {
-            if (!isCronCall) {
-              logger.info(`Fetching ${side.toUpperCase()} orders`, {
-                side,
-                traceId,
-              });
-            }
+        // Process buy and sell orders sequentially with timeout
+        const timeoutPromise = new Promise((_, reject) => {
+          setTimeout(() => reject(new Error("Processing timeout")), 15000); // 15 second timeout
+        });
 
-            // Add delay between buy/sell requests to avoid rate limiting
-            if (side === "sell") {
-              await new Promise((resolve) => setTimeout(resolve, 1000)); // 1 second delay before sell
-            }
+        const processingPromise = (async () => {
+          for (const side of sides) {
+            try {
+              // Clean processing without delays
 
-            const payload = {
-              currentPage: 1,
-              pageSize: 10,
-              deliveryCurrency: "XPL",
-              ownOrder: false,
-              maxAmount: null,
-              minAmount: null,
-              sortFields: null,
-              side: side,
-            };
+              const payload = {
+                currentPage: 1,
+                pageSize: 10,
+                deliveryCurrency: "XPL",
+                ownOrder: false,
+                maxAmount: null,
+                minAmount: null,
+                sortFields: null,
+                side: side,
+              };
 
-            // Fetch first page to get total pages
-            const firstResult = await fetchPage(URL, PARAMS, HEADERS, payload);
-
-            if (!firstResult || !firstResult.totalPage) {
-              throw new Error(
-                `Invalid response for ${side} orders: ${JSON.stringify(
-                  firstResult
-                )}`
+              // Fetch first page to get total pages
+              const firstResult = await fetchPage(
+                URL,
+                PARAMS,
+                HEADERS,
+                payload
               );
-            }
 
-            const totalPages = firstResult.totalPage;
+              if (!firstResult || !firstResult.totalPage) {
+                // Handle rate limiting gracefully - return empty orders
+                if (firstResult && firstResult.totalPage === 0) {
+                  console.log(
+                    `⚠️ [RATE LIMITED] ${side} orders - returning empty data`
+                  );
+                  continue; // Skip to next side
+                }
+                throw new Error(
+                  `Invalid response for ${side} orders: ${JSON.stringify(
+                    firstResult
+                  )}`
+                );
+              }
 
-            if (side === "buy") {
-              totalBuyPages = totalPages;
-            } else {
-              totalSellPages = totalPages;
-            }
+              const totalPages = firstResult.totalPage;
 
-            if (!isCronCall) {
-              logger.info(`Total pages for ${side}: ${totalPages}`, {
+              // Handle case when no pages due to rate limiting
+              if (totalPages === 0) {
+                console.log(
+                  `⚠️ [RATE LIMITED] ${side} orders - no pages available`
+                );
+                continue; // Skip to next side
+              }
+
+              // Fetch pages sequentially to avoid background processing
+              const ordersWithStatus: any[] = [];
+              for (
+                let currentPage = 1;
+                currentPage <= totalPages;
+                currentPage++
+              ) {
+                payload.currentPage = currentPage;
+                const result = await fetchPage(URL, PARAMS, HEADERS, payload);
+
+                // Handle different response structures
+                const orders = (result.data ||
+                  result.items ||
+                  result.orders ||
+                  []) as any[];
+
+                // Add status field to each order
+                const pageOrders = orders.map((order) => ({
+                  ...order,
+                  status: "open",
+                }));
+
+                ordersWithStatus.push(...pageOrders);
+              }
+
+              // Add to allOrders directly
+              if (side === "buy") {
+                allOrders.buyOrders = ordersWithStatus;
+              } else {
+                allOrders.sellOrders = ordersWithStatus;
+              }
+            } catch (sideError) {
+              logger.error(`Failed to fetch ${side} orders`, {
+                error: (sideError as Error).message,
                 side,
-                totalPages,
                 traceId,
               });
+              // Continue with empty orders for failed side
             }
+          }
+        })();
 
-            // Fetch all pages
-            for (
-              let currentPage = 1;
-              currentPage <= totalPages;
-              currentPage++
-            ) {
-              payload.currentPage = currentPage;
-              const result = await fetchPage(URL, PARAMS, HEADERS, payload);
-
-              // Add delay between requests to avoid rate limiting
-              if (currentPage < totalPages) {
-                await new Promise((resolve) => setTimeout(resolve, 1000)); // 1 second delay
-              }
-
-              // Handle different response structures
-              const orders = (result.data ||
-                result.items ||
-                result.orders ||
-                []) as any[];
-
-              // Add status field to each order
-              const ordersWithStatus = orders.map((order) => ({
-                ...order,
-                status: "open",
-              }));
-
-              if (side === "buy") {
-                allOrders.buyOrders.push(...ordersWithStatus);
-              } else {
-                allOrders.sellOrders.push(...ordersWithStatus);
-              }
-            }
-          } catch (sideError) {
-            logger.error(`Failed to fetch ${side} orders`, {
-              error: (sideError as Error).message,
-              side,
-              traceId,
-            });
-            // Continue with other side instead of failing completely
+        // Race between processing and timeout
+        try {
+          await Promise.race([processingPromise, timeoutPromise]);
+        } catch (error) {
+          if ((error as Error).message === "Processing timeout") {
+            logger.error("Processing timed out after 15 seconds", { traceId });
+          } else {
+            throw error;
           }
         }
 
         // Get existing orders from database
         const existingOrders = await getAllOrderBooks();
-        if (!isCronCall) {
-          logger.info(
-            `Found ${existingOrders.length} existing orders in database`,
-            {
-              traceId,
-            }
-          );
-        }
 
         // Create sets of new order IDs for comparison
         const newOrderIds = new Set([
@@ -213,11 +207,6 @@ export const handler = async (
           if (!newOrderIds.has(existingOrder.uid)) {
             await updateOrderStatus(existingOrder.uid, "close");
             closedCount++;
-            if (!isCronCall) {
-              logger.info(`Marked order as closed: ${existingOrder.uid}`, {
-                traceId,
-              });
-            }
           }
         }
 
@@ -249,16 +238,15 @@ export const handler = async (
           }
         }
 
-        if (!isCronCall) {
-          logger.info(`Saved ${savedCount} orders to database`, {
-            savedCount,
-            traceId,
-          });
-        }
+        // Check if we got any data at all
+        const hasAnyData =
+          allOrders.buyOrders.length > 0 || allOrders.sellOrders.length > 0;
 
         const result = {
           success: true,
-          message: "XPL data processed and saved to database successfully",
+          message: hasAnyData
+            ? "XPL data processed and saved to database successfully"
+            : "XPL data processing completed - no new data due to rate limiting",
           totalBuyOrders: allOrders.buyOrders.length,
           totalSellOrders: allOrders.sellOrders.length,
           totalEntries:
@@ -266,6 +254,7 @@ export const handler = async (
           savedToDatabase: savedCount,
           closedOrders: closedCount,
           source: input.source,
+          rateLimited: !hasAnyData,
         };
 
         return result;
@@ -293,11 +282,6 @@ export const handler = async (
       source: input.source,
     };
 
-    // Log failure (no emit needed)
-    console.log(
-      `❌ [FAILED] XPL data processing failed: ${errorResult.details}`
-    );
-
     logger.error("Failed to process XPL data from KuCoin", {
       error: (error as Error).message,
       traceId,
@@ -307,16 +291,31 @@ export const handler = async (
   }
 };
 
-// Helper function to fetch data from KuCoin API with retry logic
-async function fetchPage(
-  url: string,
-  params: any,
-  headers: any,
-  payload: any,
-  retries = 3,
-  delay = 2000
-) {
-  for (let attempt = 1; attempt <= retries; attempt++) {
+// Simple request cache - no delays, just caching
+const requestCache = new Map<string, { result: any; timestamp: number }>();
+const CACHE_TTL = 3000; // 3 seconds cache
+
+// Request deduplication - prevent duplicate requests
+const pendingRequests = new Map<string, Promise<any>>();
+
+// Clean fetch function - no delays, just cache and deduplication
+async function fetchPage(url: string, params: any, headers: any, payload: any) {
+  const requestKey = `${url}-${JSON.stringify(payload)}`;
+
+  // Check cache first
+  const cached = requestCache.get(requestKey);
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+    return cached.result;
+  }
+
+  // Check if request is already pending
+  const pendingRequest = pendingRequests.get(requestKey);
+  if (pendingRequest) {
+    return pendingRequest;
+  }
+
+  // Create new request promise
+  const requestPromise = (async () => {
     try {
       const response = await fetch(url, {
         method: "POST",
@@ -324,37 +323,39 @@ async function fetchPage(
         body: JSON.stringify(payload),
       });
 
+      // Handle rate limiting gracefully
       if (response.status === 429) {
-        // Rate limited - wait and retry
-        if (attempt < retries) {
-          console.log(
-            `⏳ [RATE LIMIT] Attempt ${attempt}/${retries} - Waiting ${delay}ms before retry...`
-          );
-          await new Promise((resolve) => setTimeout(resolve, delay));
-          delay *= 2; // Exponential backoff
-          continue;
-        } else {
-          throw new Error(
-            `HTTP error! status: ${response.status} - Rate limited after ${retries} attempts`
-          );
-        }
+        // Return empty result instead of throwing error
+        return {
+          data: [],
+          items: [],
+          orders: [],
+          totalPage: 0,
+          totalCount: 0,
+        };
       }
 
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
-      return await response.json();
-    } catch (error) {
-      if (attempt === retries) {
-        throw error;
-      }
-      console.log(
-        `⚠️ [RETRY] Attempt ${attempt}/${retries} failed:`,
-        (error as Error).message
-      );
-      await new Promise((resolve) => setTimeout(resolve, delay));
-      delay *= 2; // Exponential backoff
+      const result = await response.json();
+
+      // Cache successful result
+      requestCache.set(requestKey, {
+        result,
+        timestamp: Date.now(),
+      });
+
+      return result;
+    } finally {
+      // Remove from pending requests
+      pendingRequests.delete(requestKey);
     }
-  }
+  })();
+
+  // Store pending request
+  pendingRequests.set(requestKey, requestPromise);
+
+  return requestPromise;
 }

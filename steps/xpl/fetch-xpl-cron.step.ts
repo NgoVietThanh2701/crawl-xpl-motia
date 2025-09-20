@@ -1,17 +1,19 @@
-import { CronConfig } from "motia";
+import { CronConfig, Handlers } from "motia";
 
 export const config: CronConfig = {
   type: "cron",
   name: "FetchXplCron",
-  description: "Cron job to automatically fetch XPL data every minute",
-  cron: "*/1 * * * *", // Every minute
+  description: "Cron job to automatically fetch XPL data every 2 minutes",
+  cron: "*/2 * * * *", // Every 2 minutes to reduce API pressure
   emits: ["xpl.fetch.requested"],
   flows: ["xpl-management"],
 };
 
-export const handler = async (req: any, context: any) => {
-  const { logger, traceId } = context || {};
-
+export const handler: Handlers["FetchXplCron"] = async ({
+  emit,
+  logger,
+  traceId,
+}) => {
   try {
     const startTime = new Date().toLocaleString("vi-VN", {
       timeZone: "Asia/Ho_Chi_Minh",
@@ -25,16 +27,6 @@ export const handler = async (req: any, context: any) => {
 
     console.log(`🔄 [START] ${startTime} - Triggering XPL data processing...`);
 
-    // Motia will automatically emit the event defined in config.emits
-    console.log(
-      `📤 [EVENT] Motia will automatically emit xpl.fetch.requested event...`
-    );
-
-    // Just log the cron execution - Motia handles the event emission
-    console.log(
-      `✅ [EVENT SUCCESS] Cron job executed - event will be emitted automatically`
-    );
-
     const endTime = new Date().toLocaleString("vi-VN", {
       timeZone: "Asia/Ho_Chi_Minh",
       year: "numeric",
@@ -46,6 +38,19 @@ export const handler = async (req: any, context: any) => {
     });
 
     console.log(`✅ [TRIGGERED] ${endTime} - Cron job completed successfully`);
+
+    // Emit the event with cron source data
+    await emit({
+      topic: "xpl.fetch.requested",
+      data: {
+        source: "cron",
+        traceId,
+      },
+    });
+
+    console.log(
+      `📤 [EVENT] Successfully emitted xpl.fetch.requested event from cron`
+    );
 
     if (logger) {
       logger.info("Cron job completed successfully", {
@@ -69,11 +74,6 @@ export const handler = async (req: any, context: any) => {
     );
     console.error(`❌ [ERROR] Stack trace:`, (error as Error).stack);
 
-    if (logger) {
-      logger.error("Cron job failed", {
-        error: (error as Error).message,
-        traceId,
-      });
-    }
+    throw error; // Re-throw to let Motia handle the error
   }
 };

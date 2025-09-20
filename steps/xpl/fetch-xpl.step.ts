@@ -32,12 +32,6 @@ export const handler: Handlers["XplDataApi"] = async (
   try {
     const isCronCall = req.headers?.["x-cron-call"] === "true";
 
-    if (isCronCall) {
-      console.log(`⏰ [CRON API] API called from cron job`, { traceId });
-    } else {
-      logger.info("API triggered XPL data processing", { traceId });
-    }
-
     // Emit event to trigger the processing
     await (emit as any)({
       topic: "xpl.fetch.requested",
